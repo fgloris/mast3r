@@ -27,6 +27,7 @@ from dust3r.viz import add_scene_cam, CAM_COLORS, OPENGL, pts3d_to_trimesh, cat_
 from dust3r.demo import get_args_parser as dust3r_get_args_parser
 
 import matplotlib.pyplot as pl
+import open3d as o3d
 
 class SparseGAState():
     def __init__(self, sparse_ga, should_delete=False, cache_dir=None, outfile_name=None):
@@ -45,6 +46,93 @@ class SparseGAState():
             os.remove(self.outfile_name)
         self.outfile_name = None
 
+class ReconstructSurfaceMethod():
+    def __init__(self, method, alpha):
+        self.method = method
+        self.alpha = alpha
+
+def get_method(method, alpha):
+    return ReconstructSurfaceMethod(method, alpha)
+
+def find_alpha(pcd):
+    left = 1.0
+    right = 0.1
+    mesh = pcd
+    while 1:
+        if left-right < 0.2: break
+        a = (left+right)/2
+        mesh = o3d.geometry.TriangleMesh.create_from_point_cloud_alpha_shape(pcd, alpha=a)
+        if mesh.is_watertight():
+            left = (left+right)/2
+        else:
+            right = (left+right)/2
+    return mesh
+
+def pick_points(pcd):
+    vis = o3d.visualization.VisualizerWithEditing()
+    vis.create_window()
+    vis.add_geometry(pcd)
+    vis.run()
+    vis.destroy_window()
+    return vis.get_picked_points(),vis.get_cropped_geometry()
+
+def get_distance(p1,p2):
+    return math.sqrt((p1[0]-p2[0])*(p1[0]-p2[0])+(p1[1]-p2[1])*(p1[1]-p2[1])+(p1[2]-p2[2])*(p1[2]-p2[2]))
+
+
+def pct_process():
+    pct = o3d.io.read_point_cloud('scene.ply')
+    pts,pct = pick_points(pct)
+    if len(pts)%2 == 1:
+        pts = pts[:-1]
+    result = [pct]
+    for i in range(0,6):
+        if len(pts) <= 2*i:
+            result.append(-1)
+        else:
+            pct_distance = get_distance(pct.points[pts[2*i]],pct.points[pts[(2*i)+1]])
+            result.append(pct_distance)
+    return result
+
+def get_mesh_from_pct(pct,method):
+    if method.method == 'auto alpha':
+        mesh = find_alpha(pct)
+    elif method.method == 'alpha':
+        mesh = o3d.geometry.TriangleMesh.create_from_point_cloud_alpha_shape(pct, alpha=method.alpha)
+    elif method.method == 'convex hull':
+        mesh,_ = pct.compute_convex_hull()
+    mesh.compute_vertex_normals()
+    o3d.visualization.draw_geometries([mesh], mesh_show_back_face=True)
+    if not mesh.is_watertight():
+        return mesh, "Mesh is not watertight"
+    return mesh, ""
+
+def get_volume_with_mesh(d1,d2,d3,d4,d5,d6,r1,r2,r3,r4,r5,r6,mesh):
+    ratio = 0
+    pts_distance = [d1,d2,d3,d4,d5,d6]
+    real_distance = [r1,r2,r3,r4,r5,r6]
+    k = 0
+    for i in range(0,len(pts_distance)):
+        if pts_distance[i] == -1 or real_distance[i] == -1 or real_distance[i] == 0:
+            break
+        ratio += real_distance[i]/pts_distance[i]
+        k += 1
+    if k == 0:
+        return 1, 0, 0
+    ratio/=k
+    if not mesh.is_watertight():
+        print("Mesh is not watertight")
+        return ratio, 0, 0
+    mesh_volume = mesh.get_volume()
+    volume = mesh_volume*ratio
+    return ratio, mesh_volume, volume
+
+def get_volume_from_pct(d1,d2,d3,d4,d5,d6,r1,r2,r3,r4,r5,r6, pct,method):
+    mesh, error = get_mesh_from_pct(pct,method)
+    if error:
+        return 1, 0, 0, error
+    ratio, mesh_volume, volume = get_volume_with_mesh(d1,d2,d3,d4,d5,d6,r1,r2,r3,r4,r5,r6,mesh)
+    return ratio, mesh_volume, volume, ""
 
 def get_args_parser():
     parser = dust3r_get_args_parser()
@@ -61,54 +149,27 @@ def get_args_parser():
     return parser
 
 
-def _convert_scene_output_to_glb(outfile, imgs, pts3d, mask, focals, cams2world, cam_size=0.05,
-                                 cam_color=None, as_pointcloud=False,
-                                 transparent_cams=False, silent=False):
-    assert len(pts3d) == len(mask) <= len(imgs) <= len(cams2world) == len(focals)
+def _convert_scene_output_to_glb(outfile, imgs, pts3d, mask,
+                                  silent=False):
+    assert len(pts3d) == len(mask) <= len(imgs)
     pts3d = to_numpy(pts3d)
     imgs = to_numpy(imgs)
-    focals = to_numpy(focals)
-    cams2world = to_numpy(cams2world)
 
     scene = trimesh.Scene()
 
-    # full pointcloud
-    if as_pointcloud:
-        pts = np.concatenate([p[m.ravel()] for p, m in zip(pts3d, mask)]).reshape(-1, 3)
-        col = np.concatenate([p[m] for p, m in zip(imgs, mask)]).reshape(-1, 3)
-        valid_msk = np.isfinite(pts.sum(axis=1))
-        pct = trimesh.PointCloud(pts[valid_msk], colors=col[valid_msk])
-        scene.add_geometry(pct)
-    else:
-        meshes = []
-        for i in range(len(imgs)):
-            pts3d_i = pts3d[i].reshape(imgs[i].shape)
-            msk_i = mask[i] & np.isfinite(pts3d_i.sum(axis=-1))
-            meshes.append(pts3d_to_trimesh(imgs[i], pts3d_i, msk_i))
-        mesh = trimesh.Trimesh(**cat_meshes(meshes))
-        scene.add_geometry(mesh)
+    pts = np.concatenate([p[m.ravel()] for p, m in zip(pts3d, mask)]).reshape(-1, 3)
+    col = np.concatenate([p[m] for p, m in zip(imgs, mask)]).reshape(-1, 3)
+    valid_msk = np.isfinite(pts.sum(axis=1))
+    pct = trimesh.PointCloud(pts[valid_msk], colors=col[valid_msk])
 
-    # add each camera
-    for i, pose_c2w in enumerate(cams2world):
-        if isinstance(cam_color, list):
-            camera_edge_color = cam_color[i]
-        else:
-            camera_edge_color = cam_color or CAM_COLORS[i % len(CAM_COLORS)]
-        add_scene_cam(scene, pose_c2w, camera_edge_color,
-                      None if transparent_cams else imgs[i], focals[i],
-                      imsize=imgs[i].shape[1::-1], screen_width=cam_size)
-
-    rot = np.eye(4)
-    rot[:3, :3] = Rotation.from_euler('y', np.deg2rad(180)).as_matrix()
-    scene.apply_transform(np.linalg.inv(cams2world[0] @ OPENGL @ rot))
-    if not silent:
-        print('(exporting 3D scene to', outfile, ')')
+    scene.add_geometry(pct)
     scene.export(file_obj=outfile)
+    pct.export('scene.ply')
     return outfile
 
 
-def get_3D_model_from_scene(silent, scene_state, min_conf_thr=2, as_pointcloud=False, mask_sky=False,
-                            clean_depth=False, transparent_cams=False, cam_size=0.05, TSDF_thresh=0):
+def get_3D_model_from_scene(silent, scene_state, min_conf_thr=2,
+                            clean_depth=False, TSDF_thresh=0):
     """
     extract 3D_model (glb file) from a reconstructed scene
     """
@@ -121,8 +182,6 @@ def get_3D_model_from_scene(silent, scene_state, min_conf_thr=2, as_pointcloud=F
     # get optimized values from scene
     scene = scene_state.sparse_ga
     rgbimg = scene.imgs
-    focals = scene.get_focals().cpu()
-    cams2world = scene.get_im_poses().cpu()
 
     # 3D pointcloud from depthmap, poses and intrinsics
     if TSDF_thresh > 0:
@@ -131,8 +190,8 @@ def get_3D_model_from_scene(silent, scene_state, min_conf_thr=2, as_pointcloud=F
     else:
         pts3d, _, confs = to_numpy(scene.get_dense_pts3d(clean_depth=clean_depth))
     msk = to_numpy([c > min_conf_thr for c in confs])
-    return _convert_scene_output_to_glb(outfile, rgbimg, pts3d, msk, focals, cams2world, as_pointcloud=as_pointcloud,
-                                        transparent_cams=transparent_cams, cam_size=cam_size, silent=silent)
+    return _convert_scene_output_to_glb(outfile,rgbimg, pts3d, msk,
+                                         silent=silent)
 
 
 def get_reconstructed_scene(outdir, gradio_delete_cache, model, device, silent, image_size, current_scene_state,
@@ -182,8 +241,8 @@ def get_reconstructed_scene(outdir, gradio_delete_cache, model, device, silent, 
         outfile_name = tempfile.mktemp(suffix='_scene.glb', dir=outdir)
 
     scene_state = SparseGAState(scene, gradio_delete_cache, cache_dir, outfile_name)
-    outfile = get_3D_model_from_scene(silent, scene_state, min_conf_thr, as_pointcloud, mask_sky,
-                                      clean_depth, transparent_cams, cam_size, TSDF_thresh)
+    outfile = get_3D_model_from_scene(silent, scene_state, min_conf_thr, 
+                                      clean_depth, TSDF_thresh)
     return scene_state, outfile
 
 
@@ -212,7 +271,6 @@ def set_scenegraph_options(inputfiles, win_cyclic, refid, scenegraph_type):
                           maximum=num_files - 1, step=1, visible=scenegraph_type == 'oneref')
     return win_col, winsize, win_cyclic, refid
 
-
 def main_demo(tmpdirname, model, device, image_size, server_name, server_port, silent=False,
               share=False, gradio_delete_cache=False):
     if not silent:
@@ -233,6 +291,9 @@ def main_demo(tmpdirname, model, device, image_size, server_name, server_port, s
     with get_context(gradio_delete_cache) as demo:
         # scene state is save so that you can change conf_thr, cam_size... without rerunning the inference
         scene = gradio.State(None)
+        pct = gradio.State(None)
+        mesh = gradio.State(None)
+        method = gradio.State(get_method('convex hull', 0.5))
         gradio.HTML('<h2 style="text-align: center;">MASt3R Demo</h2>')
         with gradio.Column():
             inputfiles = gradio.File(file_count="multiple")
@@ -269,6 +330,7 @@ def main_demo(tmpdirname, model, device, image_size, server_name, server_port, s
                                               minimum=0, maximum=0, step=1, visible=False)
             run_btn = gradio.Button("Run")
 
+
             with gradio.Row():
                 # adjust the confidence threshold
                 min_conf_thr = gradio.Slider(label="min_conf_thr", value=1.5, minimum=0.0, maximum=10, step=0.1)
@@ -282,8 +344,49 @@ def main_demo(tmpdirname, model, device, image_size, server_name, server_port, s
                 clean_depth = gradio.Checkbox(value=True, label="Clean-up depthmaps")
                 transparent_cams = gradio.Checkbox(value=False, label="Transparent cameras")
 
-            outmodel = gradio.Model3D()
+            outmodel = gradio.Model3D(label="preview")
+            
 
+            pct_process_btn = gradio.Button("Start Picking Points")
+
+            help = gradio.Markdown(
+                                        """ - 1)Cop the point cloud: [K] drag a box, [C] accept the change, leave only points inside the box
+                                            - 2)Pick at least three correspondences using [shift + left click]
+                                            - 3)Press [shift + right click] to undo point picking
+                                            - 4)After picking points, press 'Q' to close the window
+                                            """
+            )
+
+            with gradio.Row():
+                d1 = gradio.Number(label="Distance 1", interactive=False, value = -1)
+                d2 = gradio.Number(label="Distance 2", interactive=False, value = -1)
+                d3 = gradio.Number(label="Distance 3", interactive=False, value = -1)
+                d4 = gradio.Number(label="Distance 4", interactive=False, value = -1)
+                d5 = gradio.Number(label="Distance 5", interactive=False, value = -1)
+                d6 = gradio.Number(label="Distance 6", interactive=False, value = -1)
+
+            with gradio.Row():
+                rd1 = gradio.Number(label="Real Dist 1", interactive = True, value = -1)
+                rd2 = gradio.Number(label="Real Dist 2", interactive = True, value = -1)
+                rd3 = gradio.Number(label="Real Dist 3", interactive = True, value = -1)
+                rd4 = gradio.Number(label="Real Dist 4", interactive = True, value = -1)
+                rd5 = gradio.Number(label="Real Dist 5", interactive = True, value = -1)
+                rd6 = gradio.Number(label="Real Dist 6", interactive = True, value = -1)
+
+            volume_btn = gradio.Button("Calculate Volume")
+
+            with gradio.Row():
+                method_name = gradio.Dropdown(["auto alpha", "alpha", "convex hull"],
+                                value='convex hull', label="Mesh Method",
+                                info="Method to create the mesh from the point cloud")
+                alpha = gradio.Slider(label="Alpha", value=0.5, minimum=0.0, maximum=2.0, step=0.01)
+
+            with gradio.Row():
+                ratio = gradio.Number(label="Ratio",info="the ratio of the real volume to the estimated volume", value = 1)
+                pct_volume = gradio.Number(label="Relative Volume",info="the relative volume of the mesh", interactive=False, value = 0)
+                volume = gradio.Number(label="Volume",info="the real volume", interactive=False, value = 0)
+
+            result = gradio.Textbox(label="Result", value="")
             # events
             scenegraph_type.change(set_scenegraph_options,
                                    inputs=[inputfiles, win_cyclic, refid, scenegraph_type],
@@ -327,4 +430,13 @@ def main_demo(tmpdirname, model, device, image_size, server_name, server_port, s
                                     inputs=[scene, min_conf_thr, as_pointcloud, mask_sky,
                                             clean_depth, transparent_cams, cam_size, TSDF_thresh],
                                     outputs=outmodel)
+            
+            pct_process_btn.click(fn=pct_process,
+                          inputs=[],
+                          outputs=[pct, d1,d2,d3,d4,d5,d6])
+            
+            method_name.change(fn=get_method, inputs=[method_name, alpha], outputs=[method])
+            alpha.change(fn=get_method, inputs=[method_name, alpha], outputs=[method])
+
+            volume_btn.click(fn=get_volume_from_pct, inputs=[d1,d2,d3,d4,d5,d6, rd1,rd2,rd3,rd4,rd5,rd6, pct, method], outputs=[ratio,pct_volume,volume,result])
     demo.launch(share=share, server_name=server_name, server_port=server_port)

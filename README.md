@@ -1,3 +1,13 @@
+# 环境搭建 (ubuntu)
+### 先正常搭建mast3r环境
+### 如果遇到cannot find cuda-compiled version of RoPE2D错误,请尝试以下步骤:
+### sudo vim ~/.bashrc
+### 在文件末尾添加以下内容:
+```
+export LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libstdc++.so.6
+```
+
+
 ![banner](assets/mast3r.jpg)
 
 Official implementation of `Grounding Image Matching in 3D with MASt3R`  

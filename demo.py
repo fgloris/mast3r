@@ -10,7 +10,7 @@ import torch
 import tempfile
 from contextlib import nullcontext
 
-from mast3r.demo import get_args_parser, main_demo
+from mast3r.get_volume import get_args_parser, main_demo
 
 from mast3r.model import AsymmetricMASt3R
 from mast3r.utils.misc import hash_md5
@@ -32,6 +32,9 @@ if __name__ == '__main__':
         server_name = args.server_name
     else:
         server_name = '0.0.0.0' if args.local_network else '127.0.0.1'
+
+    if args.model_name is None:
+        args.model_name = "MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric"
 
     if args.weights is not None:
         weights_path = args.weights
