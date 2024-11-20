@@ -7,6 +7,13 @@
 export LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libstdc++.so.6
 ```
 
+### 或者如果使用conda环境,直接在该环境下输入命令
+
+```
+conda env config vars set LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libstdc++.so.6
+```
+
+### 然后重启环境即可
 
 ![banner](assets/mast3r.jpg)
 
