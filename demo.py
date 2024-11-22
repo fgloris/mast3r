@@ -33,9 +33,6 @@ if __name__ == '__main__':
     else:
         server_name = '0.0.0.0' if args.local_network else '127.0.0.1'
 
-    if args.model_name is None:
-        args.model_name = "MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric"
-
     if args.weights is not None:
         weights_path = args.weights
     else:

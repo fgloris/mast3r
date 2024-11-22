@@ -5,6 +5,7 @@
 # --------------------------------------------------------
 # sparse gradio demo functions
 # --------------------------------------------------------
+import argparse
 import math
 import gradio
 import os
@@ -105,7 +106,7 @@ def get_mesh_from_pct(pct,method):
     o3d.visualization.draw_geometries([mesh], mesh_show_back_face=True)
     if not mesh.is_watertight():
         return mesh, "Mesh is not watertight"
-    return mesh, ""
+    return mesh, "OK"
 
 def get_volume_with_mesh(d1,d2,d3,d4,d5,d6,r1,r2,r3,r4,r5,r6,mesh):
     ratio = 0
@@ -132,19 +133,30 @@ def get_volume_from_pct(d1,d2,d3,d4,d5,d6,r1,r2,r3,r4,r5,r6, pct,method):
     if error:
         return 1, 0, 0, error
     ratio, mesh_volume, volume = get_volume_with_mesh(d1,d2,d3,d4,d5,d6,r1,r2,r3,r4,r5,r6,mesh)
-    return ratio, mesh_volume, volume, ""
+    return ratio, mesh_volume, volume, "OK"
 
 def get_args_parser():
-    parser = dust3r_get_args_parser()
+    parser = argparse.ArgumentParser()
+    parser_url = parser.add_mutually_exclusive_group()
+    parser_url.add_argument("--local_network", action='store_true', default=False,
+                            help="make app accessible on local network: address will be set to 0.0.0.0")
+    parser_url.add_argument("--server_name", type=str, default=None, help="server url, default is 127.0.0.1")
+    parser.add_argument("--image_size", type=int, default=512, choices=[512, 224], help="image size")
+    parser.add_argument("--server_port", type=int, help=("will start gradio app on this port (if available). "
+                                                         "If None, will search for an available port starting at 7860."),
+                        default=None)
+    parser_weights = parser.add_mutually_exclusive_group()
+    parser_weights.add_argument("--weights", type=str, help="path to the model weights", default=None)
+    parser_weights.add_argument("--model_name", type=str, help="name of the model weights",
+                                default = "MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric",
+                                choices=["MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric"])
+    parser.add_argument("--device", type=str, default='cuda', help="pytorch device")
+    parser.add_argument("--tmp_dir", type=str, default=None, help="value for tempfile.tempdir")
+    parser.add_argument("--silent", action='store_true', default=False,
+                        help="silence logs")
     parser.add_argument('--share', action='store_true')
     parser.add_argument('--gradio_delete_cache', default=None, type=int,
                         help='age/frequency at which gradio removes the file. If >0, matching cache is purged')
-
-    actions = parser._actions
-    for action in actions:
-        if action.dest == 'model_name':
-            action.choices = ["MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric"]
-    # change defaults
     parser.prog = 'mast3r demo'
     return parser
 
@@ -386,7 +398,9 @@ def main_demo(tmpdirname, model, device, image_size, server_name, server_port, s
                 pct_volume = gradio.Number(label="Relative Volume",info="the relative volume of the mesh", interactive=False, value = 0)
                 volume = gradio.Number(label="Volume",info="the real volume", interactive=False, value = 0)
 
-            result = gradio.Textbox(label="Result", value="")
+            with gradio.Row():
+                result = gradio.Textbox(label="Result", value="")
+                exit = gradio.Button("Exit Mast3r")
             # events
             scenegraph_type.change(set_scenegraph_options,
                                    inputs=[inputfiles, win_cyclic, refid, scenegraph_type],
@@ -439,4 +453,9 @@ def main_demo(tmpdirname, model, device, image_size, server_name, server_port, s
             alpha.change(fn=get_method, inputs=[method_name, alpha], outputs=[method])
 
             volume_btn.click(fn=get_volume_from_pct, inputs=[d1,d2,d3,d4,d5,d6, rd1,rd2,rd3,rd4,rd5,rd6, pct, method], outputs=[ratio,pct_volume,volume,result])
+
+            pct_process_btn.click(fn=demo.close,
+                          inputs=[],
+                          outputs=[])
+            demo.unload(demo.close)
     demo.launch(share=share, server_name=server_name, server_port=server_port)
