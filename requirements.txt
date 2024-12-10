@@ -1,2 +1,3 @@
 scikit-learn
 open3d
+gradio

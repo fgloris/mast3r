@@ -10,8 +10,8 @@ import torch
 import tempfile
 from contextlib import nullcontext
 
-from mast3r.demo import get_args_parser, main_demo
-#from mast3r.get_volume_with_client import get_args_parser, main_demo
+#from mast3r.demo import get_args_parser, main_demo
+from mast3r.get_volume_with_client import get_args_parser, main_demo
 
 from mast3r.model import AsymmetricMASt3R
 from mast3r.utils.misc import hash_md5

@@ -9,7 +9,7 @@ if os.path.exists("client/scene.ply"):
 	key = input()
 else: key = 'Y'
 if (key=='y' or key=='Y'):
-	client = Client("http://127.0.0.1:7860/",httpx_kwargs = {"timeout":60})
+	client = Client("http://47.120.49.17:8860/",httpx_kwargs = {"timeout":60})
 
 	filelist = []
 	for file in os.listdir("client"):
@@ -20,25 +20,18 @@ if (key=='y' or key=='Y'):
 		print("no images input in client/, leaving...")
 		exit()
 	result = client.predict(
-			filelist=[handle_file('https://github.com/gradio-app/gradio/raw/main/test/test_files/sample_file.pdf')],
-			optim_level="refine+depth",
-			lr1=0.07,
-			niter1=500,
-			lr2=0.014,
-			niter2=200,
-			min_conf_thr=1.5,
-			matching_conf_thr=5,
-			as_pointcloud=True,
+			filelist=filelist,
+			schedule="linear",
+			niter=300,
+			min_conf_thr=3,
+			as_pointcloud=False,
 			mask_sky=False,
 			clean_depth=True,
 			transparent_cams=False,
-			cam_size=0.2,
+			cam_size=0.05,
 			scenegraph_type="complete",
 			winsize=1,
-			win_cyclic=False,
 			refid=0,
-			TSDF_thresh=0,
-			shared_intrinsics=False,
 			api_name="/partial"
 	)
 

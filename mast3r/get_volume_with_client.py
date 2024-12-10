@@ -264,7 +264,7 @@ def main_demo(tmpdirname, model, device, image_size, server_name, server_port, s
                         refid = gradio.Slider(label="Scene Graph: Id", value=0,
                                               minimum=0, maximum=0, step=1, visible=False)
             run_btn = gradio.Button("Run")
-            download_script_btn = gradio.Button("Get Script")
+            download_script_btn = gradio.Button("Get Script (env: open3d, gradio_client)")
             download_script_btn_hidden = gradio.DownloadButton(visible=False, elem_id="download_script_btn_hidden")
             download_script_btn.click(fn= lambda : "get_volume_client.py", inputs=None, outputs=[download_script_btn_hidden]).then(fn=None, inputs=None, outputs=None, js="() => document.querySelector('#download_script_btn_hidden').click()")
 
