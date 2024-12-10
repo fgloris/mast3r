@@ -5,46 +5,49 @@ if not os.path.exists("client"):
     os.mkdir("client")
 
 if os.path.exists("client/scene.ply"): 
-	print("get 3d model with images in dir client ?(Y/N)")
-	key = input()
+    print("get 3d model with images in dir client ?(Y/N)")
+    key = input()
 else: key = 'Y'
 if (key=='y' or key=='Y'):
-	client = Client("http://127.0.0.1:7860/",httpx_kwargs = {"timeout":60})
+    client = Client("http://127.0.0.1:7860/",httpx_kwargs = {"timeout":60})
 
-	filelist = []
-	for file in os.listdir("client"):
-		file = os.path.join("client",file)    
-		filelist.append(handle_file(file))
-		
-	if len(filelist)==0:
-		print("no images input in client/, leaving...")
-		exit()
-	result = client.predict(
-			filelist=[handle_file('https://github.com/gradio-app/gradio/raw/main/test/test_files/sample_file.pdf')],
-			optim_level="refine+depth",
-			lr1=0.07,
-			niter1=500,
-			lr2=0.014,
-			niter2=200,
-			min_conf_thr=1.5,
-			matching_conf_thr=5,
-			as_pointcloud=True,
-			mask_sky=False,
-			clean_depth=True,
-			transparent_cams=False,
-			cam_size=0.2,
-			scenegraph_type="complete",
-			winsize=1,
-			win_cyclic=False,
-			refid=0,
-			TSDF_thresh=0,
-			shared_intrinsics=False,
-			api_name="/partial"
-	)
+    filelist = []
+    for file in os.listdir("client"):
+        if file.endswith(".jpg") or file.endswith(".png"):
+            file = os.path.join("client",file)    
+            filelist.append(handle_file(file))
 
-	file_path = result[0]
+    if len(filelist)==0:
+        print("no images input in client/, leaving...")
+        exit()
+    result = client.predict(
+            filelist=filelist,
+            optim_level="refine+depth",
+            lr1=0.07,
+            niter1=500,
+            lr2=0.014,
+            niter2=200,
+            min_conf_thr=1.5,
+            matching_conf_thr=5,
+            as_pointcloud=True,
+            mask_sky=False,
+            clean_depth=True,
+            transparent_cams=False,
+            cam_size=0.2,
+            scenegraph_type="complete",
+            winsize=1,
+            win_cyclic=False,
+            refid=0,
+            TSDF_thresh=0,
+            shared_intrinsics=False,
+            api_name="/partial"
+    )
 
-	shutil.copy(file_path,"./client")
+    result = client.predict(
+		api_name="/lambda_1"
+    )
+    print("get result:",result)
+    shutil.copy(result,"./client")
 
 import open3d as o3d
 import math
@@ -104,6 +107,9 @@ else :
 pts,mesh = pick_points(mesh)
 o3d.io.write_point_cloud(filename = "client/output.ply",pointcloud = mesh,write_ascii=True)
 ratio = 1
+if len(pts)==0:
+    print("No points picked! leaving...")
+    exit()
 if len(pts)<6: print("less than 6 pair of points selected! it is suggested to add more pair to improve accuracy.")
 for i in range(0,int(len(pts)/2)):
     pcd_distance = get_distance(mesh.points[pts[2*i]],mesh.points[pts[(2*i)+1]])

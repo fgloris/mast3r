@@ -104,8 +104,7 @@ def get_3D_model_from_scene(silent, scene_state, min_conf_thr=2, as_pointcloud=F
     else:
         pts3d, _, confs = to_numpy(scene.get_dense_pts3d(clean_depth=clean_depth))
     msk = to_numpy([c > min_conf_thr for c in confs])
-    return _convert_scene_output_to_glb(outfile, rgbimg, pts3d, msk, focals, cams2world, as_pointcloud=as_pointcloud,
-                                        transparent_cams=transparent_cams, cam_size=cam_size, silent=silent)
+    return _convert_scene_output_to_glb(outfile, rgbimg, pts3d, msk, silent=silent)
 
 
 def get_reconstructed_scene(outdir, gradio_delete_cache, model, device, silent, image_size, current_scene_state,
